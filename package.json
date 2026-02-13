@@ -1,6 +1,6 @@
 {
   "name": "law-mcp-server",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "MCP server for e-Gov law API consistency checks",
   "files": [
@@ -12,7 +12,7 @@
   "bin": {
     "law-mcp-server": "bin/law-mcp-server.js"
   },
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build",

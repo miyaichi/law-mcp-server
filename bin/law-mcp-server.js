@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const entry = new URL("../dist/index.js", import.meta.url);
+const entry = new URL("../dist/src/index.js", import.meta.url);
 
 import(entry.href).catch((error) => {
   console.error(

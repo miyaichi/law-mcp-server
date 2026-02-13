@@ -5,6 +5,26 @@ import { tools, resolveTool } from "./tools.js";
 
 const server = new StdioJsonRpcServer();
 
+const serverInfo = { name: "law-mcp-server", version: "0.1.2" };
+
+server.register("initialize", async (params) => {
+  const payload = (params ?? {}) as { protocolVersion?: unknown };
+  const protocolVersion =
+    typeof payload.protocolVersion === "string"
+      ? payload.protocolVersion
+      : "2024-06-17";
+  return {
+    protocolVersion,
+    serverInfo,
+    capabilities: {
+      tools: {
+        list: true,
+        call: true,
+      },
+    },
+  };
+});
+
 server.register("ping", async () => ({ ok: true }));
 
 server.register("tools/list", async () => ({
