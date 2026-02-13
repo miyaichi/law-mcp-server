@@ -51,7 +51,8 @@ const fetchLaw: Tool = {
 
 const search: Tool = {
   name: "search_laws",
-  description: "Search laws by Japanese keyword/name and return canonical LawID values for use with other tools.",
+  description:
+    "Search laws by Japanese keyword/name and return canonical LawID values for use with other tools.",
   inputSchema: {
     type: "object",
     properties: {
@@ -105,8 +106,7 @@ const summarize: Tool = {
         const paragraphs = toArray(article.Paragraph)
           .map((p) => {
             const sentences = toArray(
-              (p as { ParagraphSentence?: string | string[] })
-                .ParagraphSentence
+              (p as { ParagraphSentence?: string | string[] }).ParagraphSentence
             );
             return sentences.join("");
           })
@@ -145,12 +145,7 @@ const check: Tool = {
   },
 };
 
-export const tools: Tool[] = [
-  fetchLaw,
-  search,
-  check,
-  summarize,
-];
+export const tools: Tool[] = [fetchLaw, search, check, summarize];
 
 export const resolveTool = (name: string) =>
   tools.find((tool) => tool.name === name);

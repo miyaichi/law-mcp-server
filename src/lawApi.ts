@@ -84,7 +84,10 @@ export const searchLaws = async (
         `query style (${queryUrl.toString()}): ${error.status} ${error.body}`
       );
       if (error.status === 404) {
-        const pathUrl = new URL(`lawsearch/${encodeURIComponent(keyword)}`, base);
+        const pathUrl = new URL(
+          `lawsearch/${encodeURIComponent(keyword)}`,
+          base
+        );
         try {
           const data = await request<LawSearchResponse>(pathUrl.toString());
           cache.set(cacheKey, data, config.cacheTtlSeconds);

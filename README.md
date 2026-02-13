@@ -16,13 +16,12 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
   - `GET /lawsearch/{keyword}` – search laws by keyword.
 - Response format: JSON (includes meta, LawName, Articles, etc.). Respect official rate limits; treat 429/503 as retryable with backoff.
 
-## MCP Capabilities (planned tools)
+## MCP Capabilities
 
-- `fetch_law` – Input: `lawId` (string), optional `revisionDate`. Output: normalized law JSON plus source URL.
-- `search_laws` – Input: `keyword` (string), optional `lawType` filter. Output: list of LawID, title, promulgation date, and API URL.
-- `list_revisions` – Input: `lawId`. Output: known revision dates/IDs when the API supplies them.
-- `check_consistency` – Input: `documentText`, optional `lawIds`, optional `articleHints`, `strictness` (low/medium/high). Output: matched citations, conflicting passages, and a traceable reasoning summary.
-- `summarize_law` – Input: `lawId`, optional `articles` list. Output: concise bullet summary suitable for grounding model responses.
+- `search_laws` – Input: `keyword` (string). Output: list of LawID, title, and promulgation date.
+- `fetch_law` – Input: `lawId` (string), optional `revisionDate`. Output: normalized law JSON.
+- `check_consistency` – Input: `documentText`, `lawIds` (required). Output: matched citations, conflicting passages, and similarity scores.
+- `summarize_law` – Input: `lawId`, optional `articles` list. Output: concise article summary with paragraph text.
 
 ## Consistency Check Workflow
 
@@ -62,7 +61,7 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
 - Build: `npm run build`.
 - Copy `.env.example` to `.env` and adjust if needed.
 - Run server over stdio (JSON-RPC): `npm start` (or `npm run dev` for ts-node).
-- Configure via environment variables in `.env` (see Configuration section). The server registers tools `fetch_law`, `search_laws`, `list_revisions`, `check_consistency`, and `summarize_law`.
+- Configure via environment variables in `.env` (see Configuration section). The server registers tools `search_laws`, `fetch_law`, `check_consistency`, and `summarize_law`.
 - Quality: `npm run lint` (ESLint) / `npm run format` (Prettier).
 
 ### Claude Desktop configuration
@@ -87,7 +86,54 @@ package, run `npm install && npm run build` and then `npm link` so the
 ## Usage Examples (conceptual)
 
 - Search and fetch: “Search for 個人情報保護 and show the latest articles.” → calls `search_laws` then `fetch_law`.
-- Consistency check: “Check this draft against 労働基準法 Articles 24 and 37; highlight mismatches.” → calls `check_consistency` with `lawIds=[...]` and article hints.
+- Consistency check: "Check this draft against 労働基準法 Articles 24 and 37; highlight mismatches." → calls `search_laws` to get LawID, then `check_consistency` with `lawIds=[...]`.
+
+## Skills
+
+This repository includes domain-specific skills that demonstrate effective usage patterns for law-mcp-server tools. Skills provide comprehensive guides on how to leverage the server's capabilities for specific use cases.
+
+### Available Skills
+
+#### Digital Marketing Law Skill (`skills/digital-marketing-law/`)
+
+A comprehensive guide for using law-mcp-server to reference and verify compliance with laws related to digital marketing activities in Japan. This skill covers:
+
+- **Display Regulations**: Misleading Representation Prevention Act (景品表示法), Specified Commercial Transactions Act (特商法), Consumer Contract Act
+- **Personal Information & Tracking**: Personal Information Protection Act (個人情報保護法), Telecommunications Business Act (電気通信事業法), Specified Electronic Mail Act
+- **Platform Regulations**: Digital Platform Transparency Act, Provider Liability Act
+- **Industry-Specific Laws**: Pharmaceutical Affairs Act (薬機法), Financial Instruments and Exchange Act (金商法)
+- **Intellectual Property**: Copyright Act, Trademark Act, Unfair Competition Prevention Act
+- **Competition Law**: Antimonopoly Act (独占禁止法)
+
+**Key Features**:
+
+- Search patterns for formal names, abbreviations, and article numbers
+- 5 practical workflows (privacy policy creation, ad review, email marketing, platform transactions, amendment tracking)
+- Real-world use cases for JIAA/APTI activities, client proposals, and compliance checks
+- Common Q&A (Cookie consent, influencer marketing, comparative advertising, AI-generated content, retargeting)
+
+**Usage**:
+
+1. Read the skill file: `skills/digital-marketing-law/digital-marketing-law-SKILL.md`
+2. Reference the appropriate workflow for your task
+3. Use the provided search keywords and tool sequences
+4. Follow the best practices for law searches and consistency checks
+
+### Using Skills with Claude
+
+To enable Claude to use these skills effectively:
+
+1. **With Claude Desktop**: Skills in this repository are automatically available when the law-mcp-server is configured
+2. **With Claude API**: Include the skill content in your system prompts or as reference documentation
+3. **Custom Integration**: Point Claude to the skills directory in your MCP server configuration
+
+Skills enhance Claude's ability to:
+
+- Choose the right tools for specific legal queries
+- Use appropriate search keywords (formal names vs. abbreviations)
+- Apply domain knowledge for effective law searches
+- Structure multi-step legal compliance checks
+- Provide context-aware recommendations
 
 ## Validation Plan (to implement)
 
