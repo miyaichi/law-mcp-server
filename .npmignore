@@ -1,0 +1,13 @@
+# Exclude development files from the published package
+node_modules
+src
+test
+dist/test
+coverage
+.vscode
+.DS_Store
+tsconfig.json
+.eslintrc.*
+.prettierrc*
+.gitignore
+package-lock.json

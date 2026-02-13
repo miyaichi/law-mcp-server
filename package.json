@@ -1,11 +1,21 @@
 {
   "name": "law-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "type": "module",
   "description": "MCP server for e-Gov law API consistency checks",
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "law-mcp-server": "bin/law-mcp-server.js"
+  },
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -13,16 +23,17 @@
     "test": "npm run build && node dist/test/integration.test.js"
   },
   "dependencies": {
+    "stripe": "^20.3.1",
     "undici": "^6.13.0"
   },
   "devDependencies": {
-    "ts-node": "^10.9.2",
-    "typescript": "5.3.3",
     "@types/node": "^20.11.0",
-    "eslint": "^8.57.0",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
+    "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
-    "prettier": "^3.2.5"
+    "prettier": "^3.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "5.3.3"
   }
 }

@@ -65,6 +65,25 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
 - Configure via environment variables in `.env` (see Configuration section). The server registers tools `fetch_law`, `search_laws`, `list_revisions`, `check_consistency`, and `summarize_law`.
 - Quality: `npm run lint` (ESLint) / `npm run format` (Prettier).
 
+### Claude Desktop configuration
+
+- Install globally: `npm install -g law-mcp-server`.
+- Add to your `claude_desktop_config.json`:
+
+```
+{
+  "mcpServers": {
+    "law-mcp-server": {
+      "command": "law-mcp-server"
+    }
+  }
+}
+```
+
+If you are installing from a local clone instead of the published
+package, run `npm install && npm run build` and then `npm link` so the
+`law-mcp-server` command is available on your `PATH` for Claude Desktop.
+
 ## Usage Examples (conceptual)
 
 - Search and fetch: “Search for 個人情報保護 and show the latest articles.” → calls `search_laws` then `fetch_law`.

@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { StdioJsonRpcServer } from "./mcp.js";
 import { tools, resolveTool } from "./tools.js";
 
