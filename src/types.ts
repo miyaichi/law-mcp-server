@@ -34,11 +34,6 @@ export type LawSearchResponse = {
   referencelaw?: LawSearchItem | LawSearchItem[];
 };
 
-export type ToolResult = {
-  contentType: string;
-  data: unknown;
-};
-
 export type ConsistencyFinding = {
   segment: string;
   status: "aligned" | "potential_mismatch" | "not_found";

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 import { StdioJsonRpcServer } from "./mcp.js";
-import { tools, resolveTool } from "./tools.js";
+import { tools, resolveTool, usageInstructions } from "./tools.js";
+import { name, version } from "./config.js";
 
 const server = new StdioJsonRpcServer();
 
-const serverInfo = { name: "law-mcp-server", version: "0.1.5" };
+const serverInfo = { name, version };
 
 server.register("initialize", async (params) => {
   const payload = (params ?? {}) as { protocolVersion?: unknown };
@@ -16,23 +17,22 @@ server.register("initialize", async (params) => {
   return {
     protocolVersion,
     serverInfo,
+    instructions: usageInstructions,
     capabilities: {
-      tools: {
-        list: true,
-        call: true,
-      },
+      tools: {},
     },
   };
 });
 
-server.register("ping", async () => ({ ok: true }));
+server.register("notifications/initialized", async () => {});
+
+server.register("ping", async () => ({}));
 
 server.register("tools/list", async () => ({
   tools: tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
     inputSchema: tool.inputSchema,
-    outputSchema: tool.outputSchema,
   })),
 }));
 
@@ -49,8 +49,16 @@ server.register("tools/call", async (params) => {
     payload.arguments && typeof payload.arguments === "object"
       ? (payload.arguments as Record<string, unknown>)
       : {};
-  const result = await tool.handler(args);
-  return { content: result };
+  try {
+    const result = await tool.handler(args);
+    return { content: result };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      content: [{ type: "text", text: message }],
+      isError: true,
+    };
+  }
 });
 
 server.start();

@@ -3,26 +3,30 @@ import { cache } from "./cache.js";
 import { config } from "./config.js";
 import { LawData, LawSearchResponse } from "./types.js";
 
-const withTimeout = async <T>(promise: Promise<T>, ms: number) => {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    return await promise;
-  } finally {
-    clearTimeout(timer);
+class HttpError extends Error {
+  constructor(
+    public status: number,
+    public body: string
+  ) {
+    super(`Request failed ${status}: ${body}`);
   }
-};
+}
 
 const request = async <T>(url: string, context?: { lawId?: string }) => {
-  const res = await withTimeout(
-    fetch(url, {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), config.httpTimeoutMs);
+  let res;
+  try {
+    res = await fetch(url, {
       headers: {
         "User-Agent": config.userAgent,
         Accept: "application/json",
       },
-    }),
-    config.httpTimeoutMs
-  );
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const body = await res.text();
@@ -31,7 +35,7 @@ const request = async <T>(url: string, context?: { lawId?: string }) => {
         `Law not found for lawId "${context.lawId}". Use the official LawID (e.g., 平成十五年法律第五十七号 => H15HO57). Upstream: ${body}`
       );
     }
-    throw new Error(`Request failed ${res.status}: ${body}`);
+    throw new HttpError(res.status, body);
   }
 
   const data = (await res.json()) as T;
@@ -59,26 +63,44 @@ export const fetchLawData = async (
 export const searchLaws = async (
   keyword: string
 ): Promise<LawSearchResponse> => {
+  const cacheKey = `search:${keyword}`;
+  const cached = cache.get(cacheKey) as LawSearchResponse | undefined;
+  if (cached) return cached;
+
   const base = config.apiBase.endsWith("/")
     ? config.apiBase
     : `${config.apiBase}/`;
   const queryUrl = new URL(`lawsearch`, base);
   queryUrl.searchParams.set("keyword", keyword);
 
+  const attempts: string[] = [];
   try {
-    return await request<LawSearchResponse>(queryUrl.toString());
+    const data = await request<LawSearchResponse>(queryUrl.toString());
+    cache.set(cacheKey, data, config.cacheTtlSeconds);
+    return data;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("404")) {
-      // Some deployments expect the keyword in the path; retry once
-      const pathUrl = new URL(`lawsearch/${encodeURIComponent(keyword)}`, base);
-      try {
-        return await request<LawSearchResponse>(pathUrl.toString());
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `Law search failed for keyword "${keyword}". Tried query and path styles. Upstream: ${msg}`
-        );
+    if (error instanceof HttpError) {
+      attempts.push(
+        `query style (${queryUrl.toString()}): ${error.status} ${error.body}`
+      );
+      if (error.status === 404) {
+        const pathUrl = new URL(`lawsearch/${encodeURIComponent(keyword)}`, base);
+        try {
+          const data = await request<LawSearchResponse>(pathUrl.toString());
+          cache.set(cacheKey, data, config.cacheTtlSeconds);
+          return data;
+        } catch (err) {
+          if (err instanceof HttpError) {
+            attempts.push(
+              `path style (${pathUrl.toString()}): ${err.status} ${err.body}`
+            );
+          }
+          throw new Error(
+            `Law search failed for keyword "${keyword}". Attempts: ${attempts.join(
+              " | "
+            )}. Ensure LAW_API_BASE is reachable and keyword is valid.`
+          );
+        }
       }
     }
     throw error;

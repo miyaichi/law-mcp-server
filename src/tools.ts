@@ -2,14 +2,15 @@ import { fetchLawData, searchLaws } from "./lawApi.js";
 import { checkConsistency } from "./consistency.js";
 import { ConsistencyOutput } from "./types.js";
 
-type ToolContent = { type: string; text?: string; data?: unknown };
+export const usageInstructions = `Usage guidelines:\n\n- To find laws by Japanese name/keyword, call search_laws first. It returns canonical e-Gov LawID values (e.g., 個人情報保護法 -> H15HO57).\n- Always pass the canonical LawID to fetch_law and check_consistency (lawIds). Do not pass the Japanese title string.\n- fetch_law accepts optional revisionDate when you need a specific revision.\n- check_consistency requires at least one LawID in lawIds. Use search_laws to discover the IDs before calling.\n- summarize_law can take an optional articles array of article numbers to limit the summary.`;
+
+type ToolContent = { type: "text"; text: string };
 type ToolHandler = (input: Record<string, unknown>) => Promise<ToolContent[]>;
 
 type Tool = {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  outputSchema?: Record<string, unknown>;
   handler: ToolHandler;
 };
 
@@ -29,7 +30,8 @@ const requireArrayOfStrings = (value: unknown, field: string) => {
 
 const fetchLaw: Tool = {
   name: "fetch_law",
-  description: "Fetch a law by LawID and optional revision date",
+  description:
+    "Fetch a law by canonical e-Gov LawID (e.g., H15HO57) and optional revision date. Use search_laws to look up the LawID first.",
   inputSchema: {
     type: "object",
     properties: {
@@ -43,13 +45,13 @@ const fetchLaw: Tool = {
     const revisionDate =
       typeof input.revisionDate === "string" ? input.revisionDate : undefined;
     const data = await fetchLawData(lawId, revisionDate);
-    return [{ type: "json", data }];
+    return [{ type: "text", text: JSON.stringify(data, null, 2) }];
   },
 };
 
 const search: Tool = {
   name: "search_laws",
-  description: "Search laws by keyword",
+  description: "Search laws by Japanese keyword/name and return canonical LawID values for use with other tools.",
   inputSchema: {
     type: "object",
     properties: {
@@ -60,7 +62,7 @@ const search: Tool = {
   handler: async (input) => {
     const keyword = requireString(input.keyword, "keyword");
     const results = await searchLaws(keyword);
-    return [{ type: "json", data: results }];
+    return [{ type: "text", text: JSON.stringify(results, null, 2) }];
   },
 };
 
@@ -93,46 +95,39 @@ const summarize: Tool = {
             articlesFilter.includes(article.ArticleNumber)
         )
       : articles;
+    const toArray = <T>(v: T | T[] | undefined): T[] =>
+      !v ? [] : Array.isArray(v) ? v : [v];
     const body = filtered
-      .map((article) =>
-        `${article.ArticleNumber || ""} ${article.ArticleTitle || ""}`.trim()
-      )
       .slice(0, 10)
-      .join("\n");
+      .map((article) => {
+        const heading =
+          `${article.ArticleNumber || ""} ${article.ArticleTitle || ""}`.trim();
+        const paragraphs = toArray(article.Paragraph)
+          .map((p) => {
+            const sentences = toArray(
+              (p as { ParagraphSentence?: string | string[] })
+                .ParagraphSentence
+            );
+            return sentences.join("");
+          })
+          .filter(Boolean)
+          .join("\n");
+        return [heading, paragraphs].filter(Boolean).join("\n");
+      })
+      .join("\n\n");
     return [{ type: "text", text: body || "No articles available" }];
-  },
-};
-
-const listRevisions: Tool = {
-  name: "list_revisions",
-  description: "List known revisions for a law if provided by the API",
-  inputSchema: {
-    type: "object",
-    properties: {
-      lawId: { type: "string" },
-    },
-    required: ["lawId"],
-  },
-  handler: async (input) => {
-    const lawId = requireString(input.lawId, "lawId");
-    const data = await fetchLawData(lawId);
-    const revisions = Array.isArray((data as Record<string, unknown>).revisions)
-      ? ((data as Record<string, unknown>).revisions as string[])
-      : [];
-    return [{ type: "json", data: { lawId, revisions } }];
   },
 };
 
 const check: Tool = {
   name: "check_consistency",
-  description: "Check a document against one or more laws",
+  description:
+    "Check a document against one or more laws (lawIds must be canonical LawIDs from search_laws).",
   inputSchema: {
     type: "object",
     properties: {
       documentText: { type: "string" },
       lawIds: { type: "array", items: { type: "string" } },
-      articleHints: { type: "array", items: { type: "string" } },
-      strictness: { type: "string", enum: ["low", "medium", "high"] },
     },
     required: ["documentText"],
   },
@@ -146,14 +141,13 @@ const check: Tool = {
     }
     const laws = await Promise.all(lawIds.map((lawId) => fetchLawData(lawId)));
     const output: ConsistencyOutput = checkConsistency(documentText, laws);
-    return [{ type: "json", data: output }];
+    return [{ type: "text", text: JSON.stringify(output, null, 2) }];
   },
 };
 
 export const tools: Tool[] = [
   fetchLaw,
   search,
-  listRevisions,
   check,
   summarize,
 ];
