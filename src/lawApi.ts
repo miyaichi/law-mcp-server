@@ -13,7 +13,7 @@ const withTimeout = async <T>(promise: Promise<T>, ms: number) => {
   }
 };
 
-const request = async <T>(url: string) => {
+const request = async <T>(url: string, context?: { lawId?: string }) => {
   const res = await withTimeout(
     fetch(url, {
       headers: {
@@ -26,6 +26,11 @@ const request = async <T>(url: string) => {
 
   if (!res.ok) {
     const body = await res.text();
+    if (res.status === 404 && context?.lawId) {
+      throw new Error(
+        `Law not found for lawId "${context.lawId}". Use the official LawID (e.g., 平成十五年法律第五十七号 => H15HO57). Upstream: ${body}`
+      );
+    }
     throw new Error(`Request failed ${res.status}: ${body}`);
   }
 
@@ -46,7 +51,7 @@ export const fetchLawData = async (
     : `${config.apiBase}/`;
   const url = new URL(`lawdata/${encodeURIComponent(lawId)}`, base);
   if (revisionDate) url.searchParams.set("revision", revisionDate);
-  const data = await request<LawData>(url.toString());
+  const data = await request<LawData>(url.toString(), { lawId });
   cache.set(cacheKey, data, config.cacheTtlSeconds);
   return data;
 };
