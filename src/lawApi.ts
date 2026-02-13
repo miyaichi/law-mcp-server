@@ -62,6 +62,25 @@ export const searchLaws = async (
   const base = config.apiBase.endsWith("/")
     ? config.apiBase
     : `${config.apiBase}/`;
-  const url = new URL(`lawsearch/${encodeURIComponent(keyword)}`, base);
-  return request<LawSearchResponse>(url.toString());
+  const queryUrl = new URL(`lawsearch`, base);
+  queryUrl.searchParams.set("keyword", keyword);
+
+  try {
+    return await request<LawSearchResponse>(queryUrl.toString());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("404")) {
+      // Some deployments expect the keyword in the path; retry once
+      const pathUrl = new URL(`lawsearch/${encodeURIComponent(keyword)}`, base);
+      try {
+        return await request<LawSearchResponse>(pathUrl.toString());
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `Law search failed for keyword "${keyword}". Tried query and path styles. Upstream: ${msg}`
+        );
+      }
+    }
+    throw error;
+  }
 };

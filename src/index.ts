@@ -5,7 +5,7 @@ import { tools, resolveTool } from "./tools.js";
 
 const server = new StdioJsonRpcServer();
 
-const serverInfo = { name: "law-mcp-server", version: "0.1.2" };
+const serverInfo = { name: "law-mcp-server", version: "0.1.5" };
 
 server.register("initialize", async (params) => {
   const payload = (params ?? {}) as { protocolVersion?: unknown };

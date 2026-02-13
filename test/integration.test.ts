@@ -34,8 +34,9 @@ mockPool
 
 mockPool
   .intercept({
-    path: "/api/2/lawsearch/%E3%83%86%E3%82%B9%E3%83%88",
+    path: "/api/2/lawsearch",
     method: "GET",
+    query: { keyword: "テスト" },
   })
   .reply(200, {
     numberOfHits: 1,
