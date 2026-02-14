@@ -11,9 +11,10 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
 ## External Data Source
 
 - Base: `https://laws.e-gov.go.jp/api/2/`
-- Common endpoints (see swagger for full schema):
-  - `GET /lawdata/{LawID}` – fetch law structure and articles.
-  - `GET /lawsearch/{keyword}` – search laws by keyword.
+- Common endpoints (see [swagger](https://laws.e-gov.go.jp/api/2/swagger-ui) for full schema):
+  - `GET /law_data/{law_id_or_num_or_revision_id}` – fetch law structure and articles.
+  - `GET /keyword?keyword={keyword}` – search laws by keyword.
+  - `GET /laws?law_title={title}` – search laws by title.
 - Response format: JSON (includes meta, LawName, Articles, etc.). Respect official rate limits; treat 429/503 as retryable with backoff.
 
 ## MCP Capabilities

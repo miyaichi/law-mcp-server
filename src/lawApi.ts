@@ -53,7 +53,7 @@ export const fetchLawData = async (
   const base = config.apiBase.endsWith("/")
     ? config.apiBase
     : `${config.apiBase}/`;
-  const url = new URL(`lawdata/${encodeURIComponent(lawId)}`, base);
+  const url = new URL(`law_data/${encodeURIComponent(lawId)}`, base);
   if (revisionDate) url.searchParams.set("revision", revisionDate);
   const data = await request<LawData>(url.toString(), { lawId });
   cache.set(cacheKey, data, config.cacheTtlSeconds);
@@ -70,41 +70,18 @@ export const searchLaws = async (
   const base = config.apiBase.endsWith("/")
     ? config.apiBase
     : `${config.apiBase}/`;
-  const queryUrl = new URL(`lawsearch`, base);
-  queryUrl.searchParams.set("keyword", keyword);
+  const url = new URL(`keyword`, base);
+  url.searchParams.set("keyword", keyword);
 
-  const attempts: string[] = [];
   try {
-    const data = await request<LawSearchResponse>(queryUrl.toString());
+    const data = await request<LawSearchResponse>(url.toString());
     cache.set(cacheKey, data, config.cacheTtlSeconds);
     return data;
   } catch (error) {
     if (error instanceof HttpError) {
-      attempts.push(
-        `query style (${queryUrl.toString()}): ${error.status} ${error.body}`
+      throw new Error(
+        `Law search failed for keyword "${keyword}". URL: ${url.toString()}, Status: ${error.status}, Body: ${error.body}. Ensure LAW_API_BASE is reachable and keyword is valid.`
       );
-      if (error.status === 404) {
-        const pathUrl = new URL(
-          `lawsearch/${encodeURIComponent(keyword)}`,
-          base
-        );
-        try {
-          const data = await request<LawSearchResponse>(pathUrl.toString());
-          cache.set(cacheKey, data, config.cacheTtlSeconds);
-          return data;
-        } catch (err) {
-          if (err instanceof HttpError) {
-            attempts.push(
-              `path style (${pathUrl.toString()}): ${err.status} ${err.body}`
-            );
-          }
-          throw new Error(
-            `Law search failed for keyword "${keyword}". Attempts: ${attempts.join(
-              " | "
-            )}. Ensure LAW_API_BASE is reachable and keyword is valid.`
-          );
-        }
-      }
     }
     throw error;
   }

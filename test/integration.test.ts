@@ -8,7 +8,7 @@ mockAgent.disableNetConnect();
 const mockPool = mockAgent.get("https://laws.e-gov.go.jp");
 
 mockPool
-  .intercept({ path: "/api/2/lawdata/TEST-LAW", method: "GET" })
+  .intercept({ path: "/api/2/law_data/TEST-LAW", method: "GET" })
   .reply(200, {
     LawID: "TEST-LAW",
     LawName: "テスト法",
@@ -34,7 +34,7 @@ mockPool
 
 mockPool
   .intercept({
-    path: "/api/2/lawsearch",
+    path: "/api/2/keyword",
     method: "GET",
     query: { keyword: "テスト" },
   })
