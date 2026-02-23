@@ -11,7 +11,7 @@ RUN npm run build
 FROM node:20-slim
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts
 COPY --from=build /app/dist ./dist
 COPY README.md LICENSE ./
 ENV NODE_ENV=production
