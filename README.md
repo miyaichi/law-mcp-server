@@ -163,7 +163,7 @@ Skills enhance Claude's ability to:
 - GitHub Actions workflow: `.github/workflows/deploy.yml` deploys on `push` to `main`.
 - Required GitHub Secrets: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `API_KEY` (used as HTTP auth key).
 - Artifact Registry target: `asia-northeast1-docker.pkg.dev/<PROJECT_ID>/law-mcp-server/law-mcp-server` (PROJECT_ID is the dedicated project).
-- Cloud Run settings in the workflow: `min-instances=1`, `concurrency=10`, env vars `TRANSPORT=sse`, `API_KEY`, `PORT=8080`.
+- Cloud Run settings in the workflow: `min-instances=1`, `concurrency=10`, env vars `TRANSPORT=sse`, `API_KEY`（`PORT`は Cloud Run が自動設定）。
 - `.env` is ignored by git; keep secrets local and do not commit them.
 
 ## Validation Plan (to implement)
