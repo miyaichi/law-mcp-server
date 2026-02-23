@@ -1,27 +1,12 @@
 import readline from "node:readline";
-
-type JsonRpcId = string | number | null;
-
-type JsonRpcRequest = {
-  jsonrpc: "2.0";
-  method: string;
-  id?: JsonRpcId;
-  params?: unknown;
-};
-
-type JsonRpcError = {
-  code: number;
-  message: string;
-};
-
-type RequestHandler = (params: unknown) => Promise<unknown> | unknown;
+import {
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcRouter,
+} from "./rpc.js";
 
 export class StdioJsonRpcServer {
-  private handlers = new Map<string, RequestHandler>();
-
-  register(method: string, handler: RequestHandler) {
-    this.handlers.set(method, handler);
-  }
+  constructor(private readonly router: JsonRpcRouter) {}
 
   start() {
     const rl = readline.createInterface({ input: process.stdin });
@@ -29,33 +14,9 @@ export class StdioJsonRpcServer {
       const message = this.parseMessage(line);
       if (!message) return;
 
-      const { id, method, params } = message;
-      const handler = this.handlers.get(method);
-      if (!handler) {
-        if (id !== undefined) {
-          this.send({
-            jsonrpc: "2.0",
-            id,
-            error: { code: -32601, message: "Method not found" },
-          });
-        }
-        return;
-      }
-      try {
-        const result = await handler(params ?? {});
-        if (id !== undefined) {
-          this.send({ jsonrpc: "2.0", id, result });
-        }
-      } catch (error) {
-        if (id !== undefined) {
-          const messageText =
-            error instanceof Error ? error.message : String(error);
-          this.send({
-            jsonrpc: "2.0",
-            id,
-            error: { code: -32000, message: messageText },
-          });
-        }
+      const response = await this.router.handle(message);
+      if (response) {
+        this.send(response);
       }
     });
   }
@@ -76,12 +37,7 @@ export class StdioJsonRpcServer {
     }
   }
 
-  private send(payload: {
-    jsonrpc: "2.0";
-    id: JsonRpcId;
-    result?: unknown;
-    error?: JsonRpcError;
-  }) {
+  private send(payload: JsonRpcResponse) {
     process.stdout.write(JSON.stringify(payload) + "\n");
   }
 }

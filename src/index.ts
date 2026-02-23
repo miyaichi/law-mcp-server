@@ -3,12 +3,14 @@
 import { StdioJsonRpcServer } from "./mcp.js";
 import { tools, resolveTool, usageInstructions } from "./tools.js";
 import { name, version } from "./config.js";
+import { JsonRpcRouter } from "./rpc.js";
+import { SSEJsonRpcServer } from "./sse.js";
 
-const server = new StdioJsonRpcServer();
+const router = new JsonRpcRouter();
 
 const serverInfo = { name, version };
 
-server.register("initialize", async (params) => {
+router.register("initialize", async (params) => {
   const payload = (params ?? {}) as { protocolVersion?: unknown };
   const protocolVersion =
     typeof payload.protocolVersion === "string"
@@ -24,11 +26,11 @@ server.register("initialize", async (params) => {
   };
 });
 
-server.register("notifications/initialized", async () => {});
+router.register("notifications/initialized", async () => {});
 
-server.register("ping", async () => ({}));
+router.register("ping", async () => ({}));
 
-server.register("tools/list", async () => ({
+router.register("tools/list", async () => ({
   tools: tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
@@ -36,7 +38,7 @@ server.register("tools/list", async () => ({
   })),
 }));
 
-server.register("tools/call", async (params) => {
+router.register("tools/call", async (params) => {
   const payload = (params ?? {}) as { name?: unknown; arguments?: unknown };
   if (typeof payload.name !== "string") {
     throw new Error("Tool name is required and must be a string");
@@ -61,4 +63,29 @@ server.register("tools/call", async (params) => {
   }
 });
 
-server.start();
+const transport = (process.env.TRANSPORT || "stdio").toLowerCase();
+
+if (transport === "stdio") {
+  const server = new StdioJsonRpcServer(router);
+  server.start();
+} else if (transport === "sse") {
+  const apiKey = process.env.API_KEY?.trim();
+  if (!apiKey) {
+    console.error("API_KEY is required when TRANSPORT=sse");
+    process.exit(1);
+  }
+
+  const parsedPort = Number(process.env.PORT || "3000");
+  const port = Number.isFinite(parsedPort) ? parsedPort : 3000;
+  const allowedOrigin = process.env.ALLOWED_ORIGIN?.trim();
+
+  const server = new SSEJsonRpcServer(router, {
+    port,
+    apiKey,
+    allowedOrigin,
+  });
+  server.start();
+} else {
+  console.error(`Unknown TRANSPORT "${transport}". Use "stdio" or "sse".`);
+  process.exit(1);
+}
