@@ -42,11 +42,15 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
 
 ## Configuration
 
-- Environment variables (to be wired during implementation):
+- Environment variables:
   - `LAW_API_BASE` (default `https://laws.e-gov.go.jp/api/2/`)
   - `HTTP_TIMEOUT_MS` (default 15000)
   - `CACHE_TTL_SECONDS` (default 900)
-- Add `.env.example` later with the above keys; do not commit secrets.
+  - `TRANSPORT` (`stdio` | `sse`, default `stdio`)
+  - `PORT` (default 3000; Cloud Run provides `PORT=8080`)
+  - `API_KEY` (required when `TRANSPORT=sse`; unused for stdio)
+  - `ALLOWED_ORIGIN` (optional CORS allowlist for SSE transport)
+- `.env` is `.gitignore` されているので secrets はコミットしないこと。
 
 ## Implementation Notes
 
@@ -64,6 +68,23 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
 - Run server over stdio (JSON-RPC): `npm start` (or `npm run dev` for ts-node).
 - Configure via environment variables in `.env` (see Configuration section). The server registers tools `search_laws`, `fetch_law`, `check_consistency`, and `summarize_law`.
 - Quality: `npm run lint` (ESLint) / `npm run format` (Prettier).
+
+## Transport Modes
+
+### stdio (local default)
+
+- `TRANSPORT=stdio` (default). Authなしでローカル利用。
+- `npm start` もしくは `npm run dev` で起動。
+
+### SSE / HTTP (Cloud Run 向け)
+
+- `TRANSPORT=sse` と `API_KEY` を設定し、`PORT` に Cloud Run のポート（通常 8080）を渡す。
+- 認証: `Authorization: Bearer <API_KEY>` または `x-api-key: <API_KEY>`。
+- エンドポイント: `GET /events` (SSE ストリーム), `POST /messages` (JSON-RPC リクエスト)。
+- SSE 例:
+  - ストリーム: `curl -N -H "Authorization: Bearer $API_KEY" https://<host>/events`
+  - リクエスト: `curl -X POST -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' https://<host>/messages`
+  - SSE で `event: message` / `data: {...}` が返る。
 
 ### Claude Desktop configuration
 
@@ -135,6 +156,15 @@ Skills enhance Claude's ability to:
 - Apply domain knowledge for effective law searches
 - Structure multi-step legal compliance checks
 - Provide context-aware recommendations
+
+## Cloud Run Deployment
+
+- Container image is built via `Dockerfile` (default `TRANSPORT=sse`, `PORT=8080`).
+- GitHub Actions workflow: `.github/workflows/deploy.yml` deploys on `push` to `main`.
+- Required GitHub Secrets: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `API_KEY` (used as HTTP auth key).
+- Artifact Registry target: `asia-northeast1-docker.pkg.dev/<PROJECT_ID>/law-mcp-server/law-mcp-server` (PROJECT_ID is the dedicated project).
+- Cloud Run settings in the workflow: `min-instances=1`, `concurrency=10`, env vars `TRANSPORT=sse`, `API_KEY`, `PORT=8080`.
+- `.env` is ignored by git; keep secrets local and do not commit them.
 
 ## Validation Plan (to implement)
 
