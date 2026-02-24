@@ -106,28 +106,31 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
   package, run `npm install && npm run build` and then `npm link` so the
   `law-mcp-server` command is available on your `PATH` for Claude Desktop.
 
-- **Cloud Run (SSE transport)**
+- **Cloud Run (SSE transport via mcp-remote)**
   - Ensure Cloud Run is deployed with `TRANSPORT=sse`, `API_KEY` set, and `PORT` provided by Cloud Run.
-  - In `claude_desktop_config.json`, configure SSE endpoints and the API Key used by your service:
+  - Claude Desktop does not support SSE transport natively. Use [mcp-remote](https://www.npmjs.com/package/mcp-remote) as a local stdio-to-SSE bridge.
+  - Install mcp-remote: `npm install -g mcp-remote`
+  - In `claude_desktop_config.json`:
 
-  ```
+  ```json
   {
     "mcpServers": {
       "law-mcp-server": {
-        "transport": {
-          "type": "sse",
-          "url": "https://law-mcp-server-<hash>.asia-northeast1.run.app/messages",
-          "eventsUrl": "https://law-mcp-server-<hash>.asia-northeast1.run.app/events",
-          "headers": {
-            "Authorization": "Bearer <API_KEY>"
-          }
-        }
+        "command": "mcp-remote",
+        "args": [
+          "https://law-mcp-server-<hash>.asia-northeast1.run.app/events",
+          "--header",
+          "Authorization: Bearer <API_KEY>",
+          "--transport",
+          "sse-only"
+        ]
       }
     }
   }
   ```
 
-  - Replace `<hash>` with your Cloud Run service suffix and `<API_KEY>` with the same key set on Cloud Run. Keep the app running so Claude can maintain the SSE stream.
+  - Replace `<hash>` with your Cloud Run service suffix and `<API_KEY>` with the same key set on Cloud Run.
+  - `mcp-remote` runs as a local child process and proxies stdio ↔ SSE, so no persistent connection management is needed on the Claude Desktop side.
 
 ## Usage Examples (conceptual)
 
