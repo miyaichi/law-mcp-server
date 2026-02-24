@@ -1,4 +1,5 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { JsonRpcRequest, JsonRpcResponse, JsonRpcRouter } from "./rpc.js";
 
 type SSEServerOptions = {
@@ -28,7 +29,7 @@ const extractToken = (req: IncomingMessage) => {
 };
 
 export class SSEJsonRpcServer {
-  private connections = new Set<ServerResponse>();
+  private sessions = new Map<string, ServerResponse>();
 
   constructor(
     private readonly router: JsonRpcRouter,
@@ -84,12 +85,17 @@ export class SSEJsonRpcServer {
   }
 
   private handleEvents(_req: IncomingMessage, res: ServerResponse) {
+    const sessionId = randomUUID();
+
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       Connection: "keep-alive",
       "Cache-Control": "no-cache",
       "Access-Control-Allow-Origin": this.options.allowedOrigin || "*",
     });
+
+    // MCP SSE protocol: send endpoint event so clients know where to POST
+    res.write(`event: endpoint\ndata: /messages?sessionId=${sessionId}\n\n`);
 
     const heartbeatMs = this.options.heartbeatMs ?? 15000;
     const heartbeat = setInterval(() => {
@@ -98,14 +104,16 @@ export class SSEJsonRpcServer {
 
     res.on("close", () => {
       clearInterval(heartbeat);
-      this.connections.delete(res);
+      this.sessions.delete(sessionId);
     });
 
-    this.connections.add(res);
-    res.write(`: connected\n\n`);
+    this.sessions.set(sessionId, res);
   }
 
   private async handleMessage(req: IncomingMessage, res: ServerResponse) {
+    const urlObj = new URL(req.url ?? "/messages", `http://localhost`);
+    const sessionId = urlObj.searchParams.get("sessionId");
+
     const body = await this.readBody(req);
     const message = this.parseMessage(body);
     if (!message) {
@@ -115,7 +123,11 @@ export class SSEJsonRpcServer {
 
     const response = await this.router.handle(message);
     if (response) {
-      this.broadcast(response);
+      if (sessionId) {
+        this.sendToSession(sessionId, response);
+      } else {
+        this.broadcast(response);
+      }
     }
 
     this.writeJson(res, 202, { status: "accepted" });
@@ -137,16 +149,28 @@ export class SSEJsonRpcServer {
     }
   }
 
+  private sendToSession(sessionId: string, payload: JsonRpcResponse) {
+    const res = this.sessions.get(sessionId);
+    if (!res) return;
+    const data = JSON.stringify(payload);
+    try {
+      res.write(`event: message\ndata: ${data}\n\n`);
+    } catch (error) {
+      console.error("Failed to write SSE message to session", sessionId, error);
+      res.end();
+      this.sessions.delete(sessionId);
+    }
+  }
+
   private broadcast(payload: JsonRpcResponse) {
     const data = JSON.stringify(payload);
-    for (const res of this.connections) {
+    for (const [sessionId, res] of this.sessions) {
       try {
-        res.write(`event: message\n`);
-        res.write(`data: ${data}\n\n`);
+        res.write(`event: message\ndata: ${data}\n\n`);
       } catch (error) {
         console.error("Failed to write SSE message", error);
         res.end();
-        this.connections.delete(res);
+        this.sessions.delete(sessionId);
       }
     }
   }
