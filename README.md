@@ -88,22 +88,46 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
 
 ### Claude Desktop configuration
 
-- Install globally: `npm install -g law-mcp-server`.
-- Add to your `claude_desktop_config.json`:
+- **Local (stdio transport)**
+  - Install globally: `npm install -g law-mcp-server`.
+  - `claude_desktop_config.json`:
 
-```
-{
-  "mcpServers": {
-    "law-mcp-server": {
-      "command": "law-mcp-server"
+  ```
+  {
+    "mcpServers": {
+      "law-mcp-server": {
+        "command": "law-mcp-server"
+      }
     }
   }
-}
-```
+  ```
 
-If you are installing from a local clone instead of the published
-package, run `npm install && npm run build` and then `npm link` so the
-`law-mcp-server` command is available on your `PATH` for Claude Desktop.
+  If you are installing from a local clone instead of the published
+  package, run `npm install && npm run build` and then `npm link` so the
+  `law-mcp-server` command is available on your `PATH` for Claude Desktop.
+
+- **Cloud Run (SSE transport)**
+  - Ensure Cloud Run is deployed with `TRANSPORT=sse`, `API_KEY` set, and `PORT` provided by Cloud Run.
+  - In `claude_desktop_config.json`, configure SSE endpoints and the API Key used by your service:
+
+  ```
+  {
+    "mcpServers": {
+      "law-mcp-server": {
+        "transport": {
+          "type": "sse",
+          "url": "https://law-mcp-server-<hash>.asia-northeast1.run.app/messages",
+          "eventsUrl": "https://law-mcp-server-<hash>.asia-northeast1.run.app/events",
+          "headers": {
+            "Authorization": "Bearer <API_KEY>"
+          }
+        }
+      }
+    }
+  }
+  ```
+
+  - Replace `<hash>` with your Cloud Run service suffix and `<API_KEY>` with the same key set on Cloud Run. Keep the app running so Claude can maintain the SSE stream.
 
 ## Usage Examples (conceptual)
 
