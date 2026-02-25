@@ -46,10 +46,10 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
   - `LAW_API_BASE` (default `https://laws.e-gov.go.jp/api/2/`)
   - `HTTP_TIMEOUT_MS` (default 15000)
   - `CACHE_TTL_SECONDS` (default 900)
-  - `TRANSPORT` (`stdio` | `sse`, default `stdio`)
+  - `TRANSPORT` (`stdio` | `sse` | `http`, default `stdio`)
   - `PORT` (default 3000; Cloud Run provides `PORT=8080`)
-  - `API_KEY` (required when `TRANSPORT=sse`; unused for stdio)
-  - `ALLOWED_ORIGIN` (optional CORS allowlist for SSE transport)
+  - `API_KEY` (required when `TRANSPORT=sse` or `TRANSPORT=http`; unused for stdio)
+  - `ALLOWED_ORIGIN` (optional CORS allowlist for HTTP/SSE transport)
 - `.env` is `.gitignore` されているので secrets はコミットしないこと。
 
 ## Implementation Notes
@@ -76,15 +76,53 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
 - `TRANSPORT=stdio` (default). Authなしでローカル利用。
 - `npm start` もしくは `npm run dev` で起動。
 
-### SSE / HTTP (Cloud Run 向け)
+### Streamable HTTP / http (Cloud Run 向け・推奨)
 
-- `TRANSPORT=sse` と `API_KEY` を設定し、`PORT` に Cloud Run のポート（通常 8080）を渡す。
+MCP 仕様 2025-06-18 準拠の Streamable HTTP transport。Claude.ai のコネクタ登録に対応。
+
+- `TRANSPORT=http` と `API_KEY` を設定し、`PORT` に Cloud Run のポート（通常 8080）を渡す。
 - 認証: `Authorization: Bearer <API_KEY>` または `x-api-key: <API_KEY>`。
+- エンドポイント:
+  - `POST /mcp` — JSON-RPC リクエスト送信（メインエンドポイント）
+  - `GET /mcp` — サーバー起点の SSE ストリーム（サーバー通知用）
+  - `DELETE /mcp` — セッション終了
+  - `GET /health` — ヘルスチェック
+- セッション管理: `Mcp-Session-Id` レスポンスヘッダーで返却、以降のリクエストでヘッダーに付与。
+
+動作確認例:
+```bash
+# 1. initialize（セッション作成）
+curl -s -D - -X POST \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"test","version":"1.0"}}}' \
+  https://<host>/mcp
+# → Mcp-Session-Id: <session-id> がレスポンスヘッダーに返る
+
+# 2. tools/list（セッションIDを使用）
+curl -s -X POST \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -H "Mcp-Session-Id: <session-id>" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  https://<host>/mcp
+```
+
+### Claude.ai コネクタ登録
+
+Claude.ai の「コネクタ」機能から直接登録できます（TRANSPORT=http 時のみ対応）。
+
+1. Claude.ai の設定 → 「コネクタ」→「新しいコネクタを追加」
+2. MCP サーバー URL を入力: `https://<host>/mcp`
+3. 認証方式: **API キー** を選択
+4. ヘッダー名: `Authorization`、値: `Bearer <API_KEY>`
+
+### SSE (旧仕様、後方互換)
+
+- `TRANSPORT=sse` で旧 SSE transport を使用（Claude Desktop + mcp-remote 向け）。
 - エンドポイント: `GET /events` (SSE ストリーム), `POST /messages` (JSON-RPC リクエスト)。
-- SSE 例:
-  - ストリーム: `curl -N -H "Authorization: Bearer $API_KEY" https://<host>/events`
-  - リクエスト: `curl -X POST -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' https://<host>/messages`
-  - SSE で `event: message` / `data: {...}` が返る。
 
 ### Claude Desktop configuration
 
@@ -92,7 +130,7 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
   - Install globally: `npm install -g law-mcp-server`.
   - `claude_desktop_config.json`:
 
-  ```
+  ```json
   {
     "mcpServers": {
       "law-mcp-server": {
@@ -106,9 +144,9 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
   package, run `npm install && npm run build` and then `npm link` so the
   `law-mcp-server` command is available on your `PATH` for Claude Desktop.
 
-- **Cloud Run (SSE transport via mcp-remote)**
-  - Ensure Cloud Run is deployed with `TRANSPORT=sse`, `API_KEY` set, and `PORT` provided by Cloud Run.
-  - Claude Desktop does not support SSE transport natively. Use [mcp-remote](https://www.npmjs.com/package/mcp-remote) as a local stdio-to-SSE bridge.
+- **Cloud Run (Streamable HTTP transport)**
+  - Ensure Cloud Run is deployed with `TRANSPORT=http` and `API_KEY` set.
+  - Use [mcp-remote](https://www.npmjs.com/package/mcp-remote) as a local stdio-to-HTTP bridge.
   - Install mcp-remote: `npm install -g mcp-remote`
   - In `claude_desktop_config.json`:
 
@@ -118,11 +156,9 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
       "law-mcp-server": {
         "command": "mcp-remote",
         "args": [
-          "https://law-mcp-server-<hash>.asia-northeast1.run.app/events",
+          "https://law-mcp-server-<hash>.asia-northeast1.run.app/mcp",
           "--header",
-          "Authorization: Bearer <API_KEY>",
-          "--transport",
-          "sse-only"
+          "Authorization: Bearer <API_KEY>"
         ]
       }
     }
@@ -130,7 +166,6 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
   ```
 
   - Replace `<hash>` with your Cloud Run service suffix and `<API_KEY>` with the same key set on Cloud Run.
-  - `mcp-remote` runs as a local child process and proxies stdio ↔ SSE, so no persistent connection management is needed on the Claude Desktop side.
 
 ## Usage Examples (conceptual)
 

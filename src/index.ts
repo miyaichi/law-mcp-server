@@ -5,6 +5,7 @@ import { tools, resolveTool, usageInstructions } from "./tools.js";
 import { name, version } from "./config.js";
 import { JsonRpcRouter } from "./rpc.js";
 import { SSEJsonRpcServer } from "./sse.js";
+import { StreamableHttpServer } from "./http.js";
 
 const router = new JsonRpcRouter();
 
@@ -68,10 +69,10 @@ const transport = (process.env.TRANSPORT || "stdio").toLowerCase();
 if (transport === "stdio") {
   const server = new StdioJsonRpcServer(router);
   server.start();
-} else if (transport === "sse") {
+} else if (transport === "sse" || transport === "http") {
   const apiKey = process.env.API_KEY?.trim();
   if (!apiKey) {
-    console.error("API_KEY is required when TRANSPORT=sse");
+    console.error(`API_KEY is required when TRANSPORT=${transport}`);
     process.exit(1);
   }
 
@@ -79,13 +80,24 @@ if (transport === "stdio") {
   const port = Number.isFinite(parsedPort) ? parsedPort : 3000;
   const allowedOrigin = process.env.ALLOWED_ORIGIN?.trim();
 
-  const server = new SSEJsonRpcServer(router, {
-    port,
-    apiKey,
-    allowedOrigin,
-  });
-  server.start();
+  if (transport === "http") {
+    const server = new StreamableHttpServer(router, {
+      port,
+      apiKey,
+      allowedOrigin,
+    });
+    server.start();
+  } else {
+    const server = new SSEJsonRpcServer(router, {
+      port,
+      apiKey,
+      allowedOrigin,
+    });
+    server.start();
+  }
 } else {
-  console.error(`Unknown TRANSPORT "${transport}". Use "stdio" or "sse".`);
+  console.error(
+    `Unknown TRANSPORT "${transport}". Use "stdio", "sse", or "http".`
+  );
   process.exit(1);
 }

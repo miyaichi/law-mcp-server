@@ -15,6 +15,6 @@ RUN npm ci --omit=dev --ignore-scripts
 COPY --from=build /app/dist ./dist
 COPY README.md LICENSE ./
 ENV NODE_ENV=production
-ENV TRANSPORT=sse
+ENV TRANSPORT=http
 ENV PORT=8080
 CMD ["node", "dist/src/index.js"]

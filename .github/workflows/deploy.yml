@@ -60,4 +60,4 @@ jobs:
             --allow-unauthenticated \
             --min-instances=1 \
             --concurrency=10 \
-            --set-env-vars=TRANSPORT=sse,API_KEY=$API_KEY
+            --set-env-vars=TRANSPORT=http,API_KEY=$API_KEY
