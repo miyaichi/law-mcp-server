@@ -52,6 +52,7 @@ jobs:
       - name: Deploy to Cloud Run
         env:
           API_KEY: ${{ secrets.API_KEY }}
+          ISSUER_URL: ${{ secrets.ISSUER_URL }}
         run: |
           gcloud run deploy $SERVICE_NAME \
             --image $IMAGE \
@@ -60,4 +61,4 @@ jobs:
             --allow-unauthenticated \
             --min-instances=1 \
             --concurrency=10 \
-            --set-env-vars=TRANSPORT=http,API_KEY=$API_KEY
+            --set-env-vars=TRANSPORT=http,API_KEY=$API_KEY,ISSUER_URL=$ISSUER_URL

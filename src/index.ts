@@ -6,6 +6,7 @@ import { name, version } from "./config.js";
 import { JsonRpcRouter } from "./rpc.js";
 import { SSEJsonRpcServer } from "./sse.js";
 import { StreamableHttpServer } from "./http.js";
+import { OAuthServer } from "./oauth.js";
 
 const router = new JsonRpcRouter();
 
@@ -81,10 +82,23 @@ if (transport === "stdio") {
   const allowedOrigin = process.env.ALLOWED_ORIGIN?.trim();
 
   if (transport === "http") {
+    const issuerUrl = process.env.ISSUER_URL?.trim();
+    const oauth = issuerUrl
+      ? new OAuthServer({ issuerUrl, apiKey })
+      : undefined;
+
+    if (!oauth) {
+      console.warn(
+        "ISSUER_URL is not set — OAuth disabled. " +
+          "Set ISSUER_URL to the public URL of this server to enable Claude.ai connector registration."
+      );
+    }
+
     const server = new StreamableHttpServer(router, {
       port,
       apiKey,
       allowedOrigin,
+      oauth,
     });
     server.start();
   } else {

@@ -49,6 +49,7 @@ This repository will host an MCP server that uses **法令API Version 2** (e-Gov
   - `TRANSPORT` (`stdio` | `sse` | `http`, default `stdio`)
   - `PORT` (default 3000; Cloud Run provides `PORT=8080`)
   - `API_KEY` (required when `TRANSPORT=sse` or `TRANSPORT=http`; unused for stdio)
+  - `ISSUER_URL` (required for OAuth / Claude.ai connector; e.g. `https://law-mcp-server-xxx.run.app`)
   - `ALLOWED_ORIGIN` (optional CORS allowlist for HTTP/SSE transport)
 - `.env` is `.gitignore` されているので secrets はコミットしないこと。
 
@@ -112,12 +113,25 @@ curl -s -X POST \
 
 ### Claude.ai コネクタ登録
 
-Claude.ai の「コネクタ」機能から直接登録できます（TRANSPORT=http 時のみ対応）。
+Claude.ai の「コネクタ」機能から直接登録できます（`TRANSPORT=http` + `ISSUER_URL` 設定時）。
 
-1. Claude.ai の設定 → 「コネクタ」→「新しいコネクタを追加」
+#### 初回デプロイ手順
+
+1. Cloud Run に一度デプロイし、サービス URL（`https://law-mcp-server-xxx.run.app`）を確認。
+2. GitHub Secrets に `ISSUER_URL` を追加（値: 確認したサービス URL）。
+3. 再デプロイ（`ISSUER_URL` が環境変数に反映される）。
+
+#### Claude.ai での登録手順
+
+1. Claude.ai の設定 → **「コネクタ」** → **「カスタムコネクタを追加」**
 2. MCP サーバー URL を入力: `https://<host>/mcp`
-3. 認証方式: **API キー** を選択
-4. ヘッダー名: `Authorization`、値: `Bearer <API_KEY>`
+3. 「接続」をクリック → ブラウザが開き API キー入力画面が表示される
+4. デプロイ時に設定した `API_KEY` を入力して「接続を許可」
+
+> **「詳細設定」で OAuth Client ID / Secret を手動指定する場合**
+> Dynamic Client Registration（DCR）を使わずに固定クレデンシャルを使いたい場合は、
+> 事前に `POST /oauth/register` を呼び出してクライアントを登録し、
+> 返却された `client_id` / `client_secret` を Claude.ai に入力してください。
 
 ### SSE (旧仕様、後方互換)
 

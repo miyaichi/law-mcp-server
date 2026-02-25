@@ -1,11 +1,14 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { JsonRpcRequest, JsonRpcRouter } from "./rpc.js";
+import { OAuthServer } from "./oauth.js";
 
 export type StreamableHttpOptions = {
   port: number;
   apiKey: string;
   allowedOrigin?: string;
+  /** When provided, OAuth 2.1 endpoints are mounted and tokens are validated as JWTs. */
+  oauth?: OAuthServer;
 };
 
 type Session = {
@@ -53,12 +56,15 @@ export class StreamableHttpServer {
         return;
       }
 
+      // OAuth discovery and flow endpoints — no Bearer token required
+      if (this.options.oauth) {
+        const handled = await this.handleOAuth(req, res, this.options.oauth);
+        if (handled) return;
+      }
+
+      // All other endpoints require authentication
       if (!this.isAuthorized(req)) {
-        res.setHeader(
-          "WWW-Authenticate",
-          `Bearer realm="${this.options.allowedOrigin || "*"}"`
-        );
-        this.writeJson(res, 401, { error: "Unauthorized" });
+        this.sendUnauthorized(res);
         return;
       }
 
@@ -90,6 +96,99 @@ export class StreamableHttpServer {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // OAuth 2.1 endpoint handler
+  // Returns true if the request was handled (so the caller can return early).
+  // ---------------------------------------------------------------------------
+
+  private async handleOAuth(
+    req: IncomingMessage,
+    res: ServerResponse,
+    oauth: OAuthServer
+  ): Promise<boolean> {
+    const url = req.url ?? "";
+
+    // RFC 9728 — Protected Resource Metadata
+    if (
+      req.method === "GET" &&
+      url === "/.well-known/oauth-protected-resource"
+    ) {
+      this.writeJson(res, 200, oauth.protectedResourceMetadata());
+      return true;
+    }
+
+    // RFC 8414 — Authorization Server Metadata
+    if (
+      req.method === "GET" &&
+      url === "/.well-known/oauth-authorization-server"
+    ) {
+      this.writeJson(res, 200, oauth.authorizationServerMetadata());
+      return true;
+    }
+
+    // RFC 7591 — Dynamic Client Registration
+    if (req.method === "POST" && url === "/oauth/register") {
+      const body = await this.readBody(req);
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = JSON.parse(body) as Record<string, unknown>;
+      } catch {
+        this.writeJson(res, 400, { error: "invalid_request" });
+        return true;
+      }
+      const client = oauth.registerClient(parsed);
+      this.writeJson(res, 201, client);
+      return true;
+    }
+
+    // Authorization endpoint — GET: show form, POST: process form
+    if (url === "/oauth/authorize" || url.startsWith("/oauth/authorize?")) {
+      if (req.method === "GET") {
+        const params = new URL(url, "http://localhost").searchParams;
+        const html = oauth.renderAuthorizePage(params);
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(html);
+        return true;
+      }
+
+      if (req.method === "POST") {
+        const body = await this.readBody(req);
+        const form = Object.fromEntries(new URLSearchParams(body).entries());
+        const result = oauth.processAuthorize(form);
+
+        if ("redirect" in result) {
+          res.writeHead(302, { Location: result.redirect });
+          res.end();
+        } else {
+          // Re-render form with error
+          const params = new URLSearchParams(result.fields);
+          const html = oauth.renderAuthorizePage(params, result.error);
+          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(html);
+        }
+        return true;
+      }
+    }
+
+    // Token endpoint
+    if (req.method === "POST" && url === "/oauth/token") {
+      const body = await this.readBody(req);
+      const form = Object.fromEntries(new URLSearchParams(body).entries());
+      const authHeader = req.headers[AUTH_HEADER] as string | undefined;
+      const tokenResponse = oauth.exchangeToken(form, authHeader);
+
+      const status = "error" in tokenResponse ? 400 : 200;
+      this.writeJson(res, status, tokenResponse);
+      return true;
+    }
+
+    return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // MCP Streamable HTTP endpoints
+  // ---------------------------------------------------------------------------
+
   private async handlePost(req: IncomingMessage, res: ServerResponse) {
     const body = await this.readBody(req);
     const message = this.parseMessage(body);
@@ -102,12 +201,11 @@ export class StreamableHttpServer {
     let session: Session;
 
     if (message.method === "initialize") {
-      // initialize は常に新規セッションを作成する
+      // initialize always creates a new session
       const newId = randomUUID();
       session = { id: newId };
       this.sessions.set(newId, session);
     } else {
-      // その他のメソッドは既存セッションが必要
       if (!sessionId) {
         this.writeJson(res, 400, {
           error: `${SESSION_HEADER} header is required`,
@@ -124,7 +222,7 @@ export class StreamableHttpServer {
 
     const response = await this.router.handle(message);
 
-    // id なし（notification）は 202 Accepted で応答
+    // Notifications (no id) → 202 Accepted, no body
     if (response === null) {
       res.writeHead(202, this.baseHeaders(session.id));
       res.end();
@@ -152,7 +250,7 @@ export class StreamableHttpServer {
     }
   }
 
-  // GET /mcp: サーバー起点メッセージ用の SSE ストリーム
+  // GET /mcp — SSE stream for server-initiated messages
   private handleGet(req: IncomingMessage, res: ServerResponse) {
     const sessionId = req.headers[SESSION_HEADER] as string | undefined;
     if (!sessionId) {
@@ -182,7 +280,7 @@ export class StreamableHttpServer {
     });
   }
 
-  // DELETE /mcp: セッション終了
+  // DELETE /mcp — terminate session
   private handleDelete(req: IncomingMessage, res: ServerResponse) {
     const sessionId = req.headers[SESSION_HEADER] as string | undefined;
     if (!sessionId) {
@@ -208,10 +306,32 @@ export class StreamableHttpServer {
     res.end();
   }
 
+  // ---------------------------------------------------------------------------
+  // Auth helpers
+  // ---------------------------------------------------------------------------
+
   private isAuthorized(req: IncomingMessage): boolean {
     const token = extractToken(req);
-    return token !== null && token === this.options.apiKey;
+    if (!token) return false;
+    if (this.options.oauth) {
+      return this.options.oauth.validateToken(token);
+    }
+    return token === this.options.apiKey;
   }
+
+  private sendUnauthorized(res: ServerResponse) {
+    if (this.options.oauth) {
+      res.setHeader(
+        "WWW-Authenticate",
+        `Bearer resource_metadata="${this.options.oauth.issuerUrl}/.well-known/oauth-protected-resource"`
+      );
+    }
+    this.writeJson(res, 401, { error: "Unauthorized" });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Utilities
+  // ---------------------------------------------------------------------------
 
   private handleCors(res: ServerResponse) {
     res.statusCode = 204;
@@ -223,10 +343,7 @@ export class StreamableHttpServer {
       "Access-Control-Allow-Headers",
       `Content-Type, Authorization, ${API_KEY_HEADER}, ${SESSION_HEADER}`
     );
-    res.setHeader(
-      "Access-Control-Expose-Headers",
-      SESSION_HEADER
-    );
+    res.setHeader("Access-Control-Expose-Headers", SESSION_HEADER);
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
     res.end();
   }
