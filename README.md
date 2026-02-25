@@ -1,85 +1,85 @@
-# Law MCP Server Specification
+# Law MCP Server 仕様書
 
-This repository will host an MCP server that uses **法令API Version 2** (e-Gov) to fetch statute data and help check the consistency between internal documents and the referenced laws. The document below captures the target capabilities and operational expectations before implementation.
+このリポジトリは、**法令API Version 2**（e-Gov）を使用して法令データを取得し、内部ドキュメントと参照法令との整合性チェックを支援する MCP サーバーをホストします。
 
-## Overview
+## 概要
 
-- Provide MCP tools that surface law data from the official API and perform document-to-law consistency checks.
-- Enable knowledge workers to verify whether policy drafts, contracts, or memos align with authoritative legal text.
-- Favor transparent outputs that include sources (LawID, article numbers, URLs) and the reasoning steps used during checks.
+- 公式 API から法令データを提供し、ドキュメントと法令の整合性チェックを行う MCP ツールを提供する。
+- 政策草案・契約書・メモなどが権威ある法令テキストと整合しているかをナレッジワーカーが検証できるようにする。
+- LawID・条番号・URL などの出典と、チェック時の推論ステップを含む透明性の高いアウトプットを重視する。
 
-## External Data Source
+## 外部データソース
 
-- Base: `https://laws.e-gov.go.jp/api/2/`
-- Common endpoints (see [swagger](https://laws.e-gov.go.jp/api/2/swagger-ui) for full schema):
-  - `GET /law_data/{law_id_or_num_or_revision_id}` – fetch law structure and articles.
-  - `GET /keyword?keyword={keyword}` – search laws by keyword.
-  - `GET /laws?law_title={title}` – search laws by title.
-- Response format: JSON (includes meta, LawName, Articles, etc.). Respect official rate limits; treat 429/503 as retryable with backoff.
+- ベース URL: `https://laws.e-gov.go.jp/api/2/`
+- 主要エンドポイント（全スキーマは [swagger](https://laws.e-gov.go.jp/api/2/swagger-ui) 参照）:
+  - `GET /law_data/{law_id_or_num_or_revision_id}` — 法令構造・条文を取得
+  - `GET /keyword?keyword={keyword}` — キーワードで法令を検索
+  - `GET /laws?law_title={title}` — タイトルで法令を検索
+- レスポンス形式: JSON（meta・LawName・Articles 等を含む）。公式レート制限を遵守し、429/503 はバックオフを伴うリトライ対象とする。
 
-## MCP Capabilities
+## MCP ツール
 
-- `search_laws` – Input: `keyword` (string). Output: list of LawID, title, and promulgation date.
-- `fetch_law` – Input: `lawId` (string), optional `revisionDate`. Output: normalized law JSON.
-- `check_consistency` – Input: `documentText`, `lawIds` (required). Output: matched citations, conflicting passages, and similarity scores.
-- `summarize_law` – Input: `lawId`, optional `articles` list. Output: concise article summary with paragraph text.
+- `search_laws` — 入力: `keyword`（文字列）。出力: LawID・タイトル・公布日のリスト。
+- `fetch_law` — 入力: `lawId`（文字列）、オプション `revisionDate`。出力: 正規化された法令 JSON。
+- `check_consistency` — 入力: `documentText`・`lawIds`（必須）。出力: 一致した引用・矛盾箇所・類似度スコア。
+- `summarize_law` — 入力: `lawId`、オプション `articles` リスト。出力: 条文テキストを含む簡潔な要約。
 
-## Consistency Check Workflow
+## 整合性チェックのワークフロー
 
-- Normalize the incoming document (segment by sentence/section, detect cited articles like “第○条”).
-- Resolve target laws: use `lawIds` provided or run `search_laws` to suggest candidates.
-- Fetch required law texts via `fetch_law`; cache responses per `LawID` to reduce API load.
-- Align document segments to law articles using string similarity and citation hints; note exact article numbers when present.
-- Produce findings: for each segment, mark status (`aligned`, `potential_mismatch`, `not_found`), include article references, and show snippets from both sides.
-- Provide remediation suggestions (e.g., cite correct article, adjust wording) without altering the source document automatically.
+- 入力ドキュメントを正規化する（文・セクション単位で分割し、「第○条」のような引用条文を検出）。
+- 対象法令の特定: 指定された `lawIds` を使用するか、`search_laws` で候補を提案する。
+- `fetch_law` で必要な法令テキストを取得し、API 負荷軽減のため `LawID` 単位でレスポンスをキャッシュする。
+- 文字列類似度と引用ヒントを使用してドキュメントのセグメントを法令条文に対応付け、条番号が明示されている場合は記録する。
+- 調査結果の生成: 各セグメントについてステータス（`aligned`・`potential_mismatch`・`not_found`）を付与し、条文参照と双方のスニペットを含める。
+- ソースドキュメントを自動変更せず、修正提案（正しい条文の引用・文言の調整など）を提示する。
 
-## Server Behavior & Error Handling
+## サーバー動作とエラー処理
 
-- Map API errors to MCP-friendly errors with actionable messages (e.g., missing `LawID`, upstream 429, malformed parameters).
-- Use exponential backoff on 429/503 and surface retry-after hints when present.
-- Validate inputs early: reject empty `documentText`, overly long queries, or unsupported `lawId` formats with clear guidance.
-- Log tool calls and upstream URLs for debugging; avoid storing document contents longer than the session.
+- API エラーを実行可能なメッセージを持つ MCP フレンドリーなエラーにマッピングする（LawID 欠落・上流 429・不正なパラメータなど）。
+- 429/503 は指数バックオフを使用し、Retry-After ヒントがある場合は通知する。
+- 入力を早期バリデーション: 空の `documentText`・過度に長いクエリ・サポート外の `lawId` フォーマットを明確なガイダンスとともに拒否する。
+- デバッグ用にツール呼び出しと上流 URL をログ出力し、セッションを超えたドキュメント内容の保存は避ける。
 
-## Configuration
+## 設定
 
-- Environment variables:
-  - `LAW_API_BASE` (default `https://laws.e-gov.go.jp/api/2/`)
-  - `HTTP_TIMEOUT_MS` (default 15000)
-  - `CACHE_TTL_SECONDS` (default 900)
-  - `TRANSPORT` (`stdio` | `sse` | `http`, default `stdio`)
-  - `PORT` (default 3000; Cloud Run provides `PORT=8080`)
-  - `API_KEY` (required when `TRANSPORT=sse` or `TRANSPORT=http`; unused for stdio)
-  - `ISSUER_URL` (required for OAuth / Claude.ai connector; e.g. `https://law-mcp-server-xxx.run.app`)
-  - `ALLOWED_ORIGIN` (optional CORS allowlist for HTTP/SSE transport)
-- `.env` is `.gitignore` されているので secrets はコミットしないこと。
+- 環境変数:
+  - `LAW_API_BASE`（デフォルト: `https://laws.e-gov.go.jp/api/2/`）
+  - `HTTP_TIMEOUT_MS`（デフォルト: 15000）
+  - `CACHE_TTL_SECONDS`（デフォルト: 900）
+  - `TRANSPORT`（`stdio` | `sse` | `http`、デフォルト: `stdio`）
+  - `PORT`（デフォルト: 3000。Cloud Run は `PORT=8080` を自動設定）
+  - `API_KEY`（`TRANSPORT=sse` または `TRANSPORT=http` の場合に必須。stdio では不使用）
+  - `ISSUER_URL`（OAuth / Claude.ai コネクタに必要。例: `https://law-mcp-server-xxx.run.app`）
+  - `ALLOWED_ORIGIN`（HTTP/SSE トランスポート向けのオプション CORS 許可リスト）
+- `.env` は `.gitignore` されているので、シークレットはコミットしないこと。
 
-## Implementation Notes
+## 実装メモ
 
-- Suggested stack: Node.js with a lightweight stdio JSON-RPC bridge for MCP compatibility, `undici`/`node-fetch` for HTTP, and a lightweight in-memory cache (Map/LRU). TypeScript preferred for schema safety using the Swagger spec.
-- Define TypeScript types for API responses (LawData, Article, SearchResult) to enforce strict parsing.
-- Keep business logic pure and testable (e.g., citation extraction, alignment scoring) independent of I/O.
-- Expose a health endpoint or MCP tool (e.g., `ping`) for quick readiness checks.
+- 推奨スタック: MCP 互換のための軽量 stdio JSON-RPC ブリッジを持つ Node.js、HTTP には `undici`/`node-fetch`、軽量インメモリキャッシュ（Map/LRU）。スキーマ安全性のため TypeScript 推奨（Swagger 仕様を活用）。
+- API レスポンス（LawData・Article・SearchResult）の TypeScript 型を定義し、厳格なパースを強制する。
+- ビジネスロジック（引用抽出・整合スコアリングなど）は I/O に依存しない純粋でテスタブルな実装を維持する。
+- 迅速な疎通確認のためにヘルスエンドポイントまたは MCP ツール（例: `ping`）を公開する。
 
-## Getting Started
+## はじめに
 
-- Requirements: Node.js 18+.
-- Install dependencies: `npm install`.
-- Build: `npm run build`.
-- Copy `.env.example` to `.env` and adjust if needed.
-- Run server over stdio (JSON-RPC): `npm start` (or `npm run dev` for ts-node).
-- Configure via environment variables in `.env` (see Configuration section). The server registers tools `search_laws`, `fetch_law`, `check_consistency`, and `summarize_law`.
-- Quality: `npm run lint` (ESLint) / `npm run format` (Prettier).
+- 要件: Node.js 18 以上。
+- 依存関係インストール: `npm install`。
+- ビルド: `npm run build`。
+- `.env.example` を `.env` にコピーし、必要に応じて設定を調整する。
+- stdio（JSON-RPC）でサーバーを起動: `npm start`（または ts-node の場合は `npm run dev`）。
+- 設定は `.env` の環境変数で行う（設定セクションを参照）。サーバーは `search_laws`・`fetch_law`・`check_consistency`・`summarize_law` ツールを登録する。
+- 品質管理: `npm run lint`（ESLint）/ `npm run format`（Prettier）。
 
-## Transport Modes
+## トランスポートモード
 
-### stdio (local default)
+### stdio（ローカルデフォルト）
 
-- `TRANSPORT=stdio` (default). Authなしでローカル利用。
-- `npm start` もしくは `npm run dev` で起動。
+- `TRANSPORT=stdio`（デフォルト）。認証なしでローカル利用。
+- `npm start` または `npm run dev` で起動。
 
-### Streamable HTTP / http (Cloud Run 向け・推奨)
+### Streamable HTTP / http（Cloud Run 向け・推奨）
 
-MCP 仕様 2025-06-18 準拠の Streamable HTTP transport。Claude.ai のコネクタ登録に対応。
+MCP 仕様 2025-06-18 準拠の Streamable HTTP トランスポート。Claude.ai のコネクタ登録に対応。
 
 - `TRANSPORT=http` と `API_KEY` を設定し、`PORT` に Cloud Run のポート（通常 8080）を渡す。
 - 認証: `Authorization: Bearer <API_KEY>` または `x-api-key: <API_KEY>`。
@@ -88,7 +88,7 @@ MCP 仕様 2025-06-18 準拠の Streamable HTTP transport。Claude.ai のコネ�
   - `GET /mcp` — サーバー起点の SSE ストリーム（サーバー通知用）
   - `DELETE /mcp` — セッション終了
   - `GET /health` — ヘルスチェック
-- セッション管理: `Mcp-Session-Id` レスポンスヘッダーで返却、以降のリクエストでヘッダーに付与。
+- セッション管理: `Mcp-Session-Id` レスポンスヘッダーで返却し、以降のリクエストでヘッダーに付与する。
 
 動作確認例:
 ```bash
@@ -133,15 +133,15 @@ Claude.ai の「コネクタ」機能から直接登録できます（`TRANSPORT
 > 事前に `POST /oauth/register` を呼び出してクライアントを登録し、
 > 返却された `client_id` / `client_secret` を Claude.ai に入力してください。
 
-### SSE (旧仕様、後方互換)
+### SSE（旧仕様・後方互換）
 
-- `TRANSPORT=sse` で旧 SSE transport を使用（Claude Desktop + mcp-remote 向け）。
-- エンドポイント: `GET /events` (SSE ストリーム), `POST /messages` (JSON-RPC リクエスト)。
+- `TRANSPORT=sse` で旧 SSE トランスポートを使用（Claude Desktop + mcp-remote 向け）。
+- エンドポイント: `GET /events`（SSE ストリーム）、`POST /messages`（JSON-RPC リクエスト）。
 
-### Claude Desktop configuration
+### Claude Desktop 設定
 
-- **Local (stdio transport)**
-  - Install globally: `npm install -g law-mcp-server`.
+- **ローカル（stdio トランスポート）**
+  - グローバルインストール: `npm install -g law-mcp-server`。
   - `claude_desktop_config.json`:
 
   ```json
@@ -154,15 +154,13 @@ Claude.ai の「コネクタ」機能から直接登録できます（`TRANSPORT
   }
   ```
 
-  If you are installing from a local clone instead of the published
-  package, run `npm install && npm run build` and then `npm link` so the
-  `law-mcp-server` command is available on your `PATH` for Claude Desktop.
+  公開パッケージではなくローカルクローンからインストールする場合は、`npm install && npm run build` を実行後、`npm link` で `law-mcp-server` コマンドを PATH に追加してから Claude Desktop で使用してください。
 
-- **Cloud Run (Streamable HTTP transport)**
-  - Ensure Cloud Run is deployed with `TRANSPORT=http` and `API_KEY` set.
-  - Use [mcp-remote](https://www.npmjs.com/package/mcp-remote) as a local stdio-to-HTTP bridge.
-  - Install mcp-remote: `npm install -g mcp-remote`
-  - In `claude_desktop_config.json`:
+- **Cloud Run（Streamable HTTP トランスポート）**
+  - Cloud Run が `TRANSPORT=http` と `API_KEY` を設定してデプロイされていることを確認する。
+  - ローカルの stdio-to-HTTP ブリッジとして [mcp-remote](https://www.npmjs.com/package/mcp-remote) を使用する。
+  - mcp-remote のインストール: `npm install -g mcp-remote`
+  - `claude_desktop_config.json`:
 
   ```json
   {
@@ -179,76 +177,76 @@ Claude.ai の「コネクタ」機能から直接登録できます（`TRANSPORT
   }
   ```
 
-  - Replace `<hash>` with your Cloud Run service suffix and `<API_KEY>` with the same key set on Cloud Run.
+  - `<hash>` を Cloud Run サービスのサフィックスに、`<API_KEY>` を Cloud Run に設定した同じキーに置き換えてください。
 
-## Usage Examples (conceptual)
+## 使用例（概念的）
 
-- Search and fetch: “Search for 個人情報保護 and show the latest articles.” → calls `search_laws` then `fetch_law`.
-- Consistency check: "Check this draft against 労働基準法 Articles 24 and 37; highlight mismatches." → calls `search_laws` to get LawID, then `check_consistency` with `lawIds=[...]`.
+- 検索・取得: 「個人情報保護を検索して最新の条文を表示して」→ `search_laws` を呼び出した後 `fetch_law` を呼び出す。
+- 整合性チェック: 「この草案を労働基準法第24条・第37条と照合し、不一致箇所を強調表示して」→ `search_laws` で LawID を取得後、`lawIds=[...]` を指定して `check_consistency` を呼び出す。
 
-## Skills
+## スキル
 
-This repository includes domain-specific skills that demonstrate effective usage patterns for law-mcp-server tools. Skills provide comprehensive guides on how to leverage the server's capabilities for specific use cases.
+このリポジトリには、law-mcp-server ツールの効果的な使用パターンを示すドメイン固有のスキルが含まれています。スキルは、特定のユースケースに対してサーバーの機能を活用する方法の包括的なガイドを提供します。
 
-### Available Skills
+### 利用可能なスキル
 
-#### Digital Marketing Law Skill (`skills/digital-marketing-law/`)
+#### デジタルマーケティング法スキル（`skills/digital-marketing-law/`）
 
-A comprehensive guide for using law-mcp-server to reference and verify compliance with laws related to digital marketing activities in Japan. This skill covers:
+law-mcp-server を使用して日本のデジタルマーケティング活動に関連する法令を参照・コンプライアンス確認するための包括的なガイド。このスキルが対象とする法令:
 
-- **Display Regulations**: Misleading Representation Prevention Act (景品表示法), Specified Commercial Transactions Act (特商法), Consumer Contract Act
-- **Personal Information & Tracking**: Personal Information Protection Act (個人情報保護法), Telecommunications Business Act (電気通信事業法), Specified Electronic Mail Act
-- **Platform Regulations**: Digital Platform Transparency Act, Provider Liability Act
-- **Industry-Specific Laws**: Pharmaceutical Affairs Act (薬機法), Financial Instruments and Exchange Act (金商法)
-- **Intellectual Property**: Copyright Act, Trademark Act, Unfair Competition Prevention Act
-- **Competition Law**: Antimonopoly Act (独占禁止法)
+- **表示規制**: 景品表示法・特定商取引法（特商法）・消費者契約法
+- **個人情報・トラッキング**: 個人情報保護法・電気通信事業法・特定電子メール法
+- **プラットフォーム規制**: デジタルプラットフォーム透明化法・プロバイダ責任法
+- **業種別法律**: 薬機法・金融商品取引法（金商法）
+- **知的財産**: 著作権法・商標法・不正競争防止法
+- **競争法**: 独占禁止法
 
-**Key Features**:
+**主な機能**:
 
-- Search patterns for formal names, abbreviations, and article numbers
-- 5 practical workflows (privacy policy creation, ad review, email marketing, platform transactions, amendment tracking)
-- Real-world use cases for JIAA/APTI activities, client proposals, and compliance checks
-- Common Q&A (Cookie consent, influencer marketing, comparative advertising, AI-generated content, retargeting)
+- 正式名称・略称・条番号による検索パターン
+- 5つの実践的ワークフロー（プライバシーポリシー作成・広告審査・メールマーケティング・プラットフォーム取引・改正追跡）
+- JIAA/APTI 活動・顧客提案・コンプライアンスチェックの実際のユースケース
+- よくある Q&A（クッキー同意・インフルエンサーマーケティング・比較広告・AI 生成コンテンツ・リターゲティング）
 
-**Usage**:
+**使い方**:
 
-1. Read the skill file: `skills/digital-marketing-law/digital-marketing-law-SKILL.md`
-2. Reference the appropriate workflow for your task
-3. Use the provided search keywords and tool sequences
-4. Follow the best practices for law searches and consistency checks
+1. スキルファイルを読む: `skills/digital-marketing-law/digital-marketing-law-SKILL.md`
+2. タスクに適したワークフローを参照する
+3. 提供された検索キーワードとツールシーケンスを使用する
+4. 法令検索と整合性チェックのベストプラクティスに従う
 
-### Using Skills with Claude
+### Claude でスキルを使う
 
-To enable Claude to use these skills effectively:
+Claude がこれらのスキルを効果的に使用できるようにするには:
 
-1. **With Claude Desktop**: Skills in this repository are automatically available when the law-mcp-server is configured
-2. **With Claude API**: Include the skill content in your system prompts or as reference documentation
-3. **Custom Integration**: Point Claude to the skills directory in your MCP server configuration
+1. **Claude Desktop の場合**: law-mcp-server が設定されていれば、このリポジトリのスキルが自動的に利用可能になる
+2. **Claude API の場合**: システムプロンプトや参考ドキュメントとしてスキルのコンテンツを含める
+3. **カスタム統合**: MCP サーバー設定でスキルディレクトリを指定する
 
-Skills enhance Claude's ability to:
+スキルによって Claude の能力が向上する:
 
-- Choose the right tools for specific legal queries
-- Use appropriate search keywords (formal names vs. abbreviations)
-- Apply domain knowledge for effective law searches
-- Structure multi-step legal compliance checks
-- Provide context-aware recommendations
+- 特定の法律クエリに適したツールの選択
+- 適切な検索キーワードの使用（正式名称 vs. 略称）
+- 効果的な法令検索のためのドメイン知識の適用
+- 多段階の法令コンプライアンスチェックの構造化
+- コンテキストを考慮した推奨事項の提供
 
-## Cloud Run Deployment
+## Cloud Run デプロイ
 
-- Container image is built via `Dockerfile` (default `TRANSPORT=sse`, `PORT=8080`).
-- GitHub Actions workflow: `.github/workflows/deploy.yml` deploys on `push` to `main`.
-- Required GitHub Secrets: `GCP_PROJECT_ID`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `API_KEY` (used as HTTP auth key).
-- Artifact Registry target: `asia-northeast1-docker.pkg.dev/<PROJECT_ID>/law-mcp-server/law-mcp-server` (PROJECT_ID is the dedicated project).
-- Cloud Run settings in the workflow: `min-instances=1`, `concurrency=10`, env vars `TRANSPORT=sse`, `API_KEY`（`PORT`は Cloud Run が自動設定）。
-- `.env` is ignored by git; keep secrets local and do not commit them.
+- コンテナイメージは `Dockerfile` でビルド（デフォルト: `TRANSPORT=sse`、`PORT=8080`）。
+- GitHub Actions ワークフロー: `.github/workflows/deploy.yml` が `main` への `push` でデプロイ。
+- 必要な GitHub Secrets: `GCP_PROJECT_ID`・`GCP_WORKLOAD_IDENTITY_PROVIDER`・`GCP_SERVICE_ACCOUNT`・`API_KEY`（HTTP 認証キーとして使用）。
+- Artifact Registry ターゲット: `asia-northeast1-docker.pkg.dev/<PROJECT_ID>/law-mcp-server/law-mcp-server`（PROJECT_ID は専用プロジェクト）。
+- ワークフローの Cloud Run 設定: `min-instances=1`・`concurrency=10`、環境変数 `TRANSPORT=sse`・`API_KEY`（`PORT` は Cloud Run が自動設定）。
+- `.env` は git で無視されるため、シークレットはローカルに保管してコミットしないこと。
 
-## Validation Plan (to implement)
+## 検証計画（実装予定）
 
-- Unit tests for citation parsing, article alignment scoring, and API response normalization.
-- Integration tests mocking the 法令API to cover success, 404, 429/503 retry, and malformed LawID cases.
-- Integration test runner: `npm run test` (uses undici MockAgent; no network).
-- Manual smoke: run MCP client (e.g., Claude Desktop) to issue `search_laws` and `check_consistency` commands.
+- 引用パース・条文整合スコアリング・API レスポンス正規化のユニットテスト。
+- 成功・404・429/503 リトライ・不正な LawID のケースをカバーするため、法令 API をモックした統合テスト。
+- 統合テストランナー: `npm run test`（undici MockAgent 使用、ネットワーク不要）。
+- 手動スモークテスト: MCP クライアント（例: Claude Desktop）で `search_laws` と `check_consistency` コマンドを実行。
 
 ---
 
-This specification is the starting point; refine it as implementation details solidify while keeping parity with the official 法令API Version 2 documentation.
+この仕様書は実装の出発点です。実装の詳細が固まるにつれて改訂しつつ、公式の法令API Version 2 ドキュメントとの整合性を維持してください。
