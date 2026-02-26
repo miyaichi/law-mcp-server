@@ -1,4 +1,4 @@
-# Law MCP Server 仕様書
+# Law MCP Server
 
 このリポジトリは、**法令API Version 2**（e-Gov）を使用して法令データを取得し、内部ドキュメントと参照法令との整合性チェックを支援する MCP サーバーをホストします。
 
@@ -247,6 +247,6 @@ Claude がこれらのスキルを効果的に使用できるようにするに�
 - 統合テストランナー: `npm run test`（undici MockAgent 使用、ネットワーク不要）。
 - 手動スモークテスト: MCP クライアント（例: Claude Desktop）で `search_laws` と `check_consistency` コマンドを実行。
 
----
+## ライセンス
 
-この仕様書は実装の出発点です。実装の詳細が固まるにつれて改訂しつつ、公式の法令API Version 2 ドキュメントとの整合性を維持してください。
+- MIT License
